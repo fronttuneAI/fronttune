@@ -1,33 +1,24 @@
 import { getStore } from "@netlify/blobs";
 
-const STORE = "fronttune-jobs";
-const UPSTREAM = "https://omegatech-api.dixonomega.tech/api/ai/sonu-pro";
+const STORE_NAME = "fronttune-jobs";
 
-function json(body, status = 200) {
-  return new Response(JSON.stringify(body), {
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
     status,
     headers: {
       "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-      "access-control-allow-origin": "*"
+      "cache-control": "no-store"
     }
   });
 }
 
-export default async (request) => {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-methods": "POST, OPTIONS",
-        "access-control-allow-headers": "content-type"
-      }
-    });
-  }
+export default async function handler(request) {
 
   if (request.method !== "POST") {
-    return json({ success: false, message: "Method not allowed." }, 405);
+    return json({
+      success: false,
+      message: "POST method required."
+    }, 405);
   }
 
   let input;
@@ -35,59 +26,125 @@ export default async (request) => {
   try {
     input = await request.json();
   } catch {
-    return json({ success: false, message: "Invalid JSON request." }, 400);
+    return json({
+      success: false,
+      message: "Invalid JSON request."
+    }, 400);
   }
 
-  const prompt = String(input.prompt ?? "").trim();
+  const prompt = String(input.prompt || "").trim();
 
   if (!prompt) {
-    return json({ success: false, message: "Prompt is required." }, 400);
+    return json({
+      success: false,
+      message: "Please enter a song prompt."
+    }, 400);
   }
 
   const jobId = crypto.randomUUID();
-  const store = getStore(STORE);
+
+  const store = getStore(STORE_NAME);
 
   await store.setJSON(jobId, {
     status: "queued",
     createdAt: Date.now()
   });
 
-  const backgroundUrl =
-    new URL("/api/generate-background", request.url).toString();
-
-  const payload = {
+  const job = {
     jobId,
+
     prompt,
-    lyrics: String(input.lyrics ?? ""),
-    title: String(input.title ?? ""),
-    modelId: Number(input.modelId ?? 6),
-    isInstrumental: Boolean(input.isInstrumental),
-    musicStyle: String(input.musicStyle ?? ""),
-    musicStyleCode: String(input.musicStyleCode ?? ""),
-    genderType: Number(input.genderType ?? 0),
-    sessionId: input.sessionId || undefined
+
+    lyrics: String(
+      input.lyrics || ""
+    ),
+
+    title: String(
+      input.title || ""
+    ),
+
+    modelId: Number(
+      input.modelId || 6
+    ),
+
+    isInstrumental:
+      Boolean(input.isInstrumental),
+
+    musicStyle: String(
+      input.musicStyle || ""
+    ),
+
+    musicStyleCode: String(
+      input.musicStyleCode || ""
+    ),
+
+    genderType: Number(
+      input.genderType || 0
+    ),
+
+    sessionId:
+      input.sessionId || ""
   };
 
-  try {
-    const response = await fetch(backgroundUrl, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-fronttune-job": jobId
-      },
-      body: JSON.stringify(payload)
-    });
+  /*
+   * IMPORTANT:
+   *
+   * generate-background.mjs is intentionally
+   * called through Netlify's default function URL.
+   *
+   * Because the filename ends in -background,
+   * Netlify treats it as a Background Function.
+   */
 
-    if (!response.ok && response.status !== 202) {
+  const workerURL = new URL(
+    "/.netlify/functions/generate-background",
+    request.url
+  );
+
+  try {
+
+    const workerResponse =
+      await fetch(workerURL, {
+        method: "POST",
+
+        headers: {
+          "content-type":
+            "application/json",
+
+          "x-fronttune-worker":
+            "true"
+        },
+
+        body: JSON.stringify(job)
+      });
+
+    /*
+     * A correctly invoked Netlify Background
+     * Function immediately returns HTTP 202.
+     */
+
+    if (
+      workerResponse.status !== 202
+    ) {
+
+      const workerText =
+        await workerResponse.text();
+
       await store.setJSON(jobId, {
         status: "failed",
         createdAt: Date.now(),
-        message: `Could not start generation worker (HTTP ${response.status}).`
+        message:
+          `Background worker returned HTTP ${workerResponse.status}.`,
+        detail:
+          workerText.slice(0, 500)
       });
 
       return json({
         success: false,
-        message: "Could not start the music generation worker."
+        message:
+          "Could not start the music generation worker.",
+        detail:
+          `Worker HTTP ${workerResponse.status}`
       }, 502);
     }
 
@@ -98,19 +155,25 @@ export default async (request) => {
     });
 
   } catch (error) {
+
     await store.setJSON(jobId, {
       status: "failed",
       createdAt: Date.now(),
-      message: error?.message || "Could not start background generation."
+      message:
+        error?.message ||
+        "Background worker could not be started."
     });
 
     return json({
       success: false,
-      message: "Could not start music generation.",
-      detail: error?.message || "Unknown error"
+      message:
+        "Could not start the music generation worker.",
+      detail:
+        error?.message ||
+        "Unknown worker error."
     }, 502);
   }
-};
+}
 
 export const config = {
   path: "/api/generate"
