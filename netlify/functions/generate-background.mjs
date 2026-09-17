@@ -1,101 +1,174 @@
 import { getStore } from "@netlify/blobs";
 
-const STORE = "fronttune-jobs";
-const UPSTREAM =
+const STORE_NAME = "fronttune-jobs";
+
+const OMEGATECH_URL =
   "https://omegatech-api.dixonomega.tech/api/ai/sonu-pro";
 
-export default async (request) => {
-  let input;
+export default async function handler(request) {
+
+  let job;
 
   try {
-    input = await request.json();
+    job = await request.json();
   } catch {
-    return new Response("Invalid JSON", { status: 400 });
+    return;
   }
 
-  const jobId = String(input.jobId || "").trim();
+  const jobId =
+    String(job.jobId || "").trim();
 
   if (!jobId) {
-    return new Response("Missing job ID", { status: 400 });
+    return;
   }
 
-  const store = getStore(STORE);
+  const store =
+    getStore(STORE_NAME);
+
+  /*
+   * Tell the status endpoint that generation
+   * has actually started.
+   */
+
+  await store.setJSON(jobId, {
+    status: "generating",
+    createdAt:
+      Date.now()
+  });
 
   try {
-    await store.setJSON(jobId, {
-      status: "generating",
-      createdAt: Date.now()
-    });
 
-    const q = new URLSearchParams();
+    const params =
+      new URLSearchParams();
 
-    q.set("action", "generate");
-    q.set("prompt", String(input.prompt || ""));
+    params.set(
+      "action",
+      "generate"
+    );
 
-    const fields = [
-      "lyrics",
-      "title",
-      "modelId",
-      "isInstrumental",
-      "musicStyle",
-      "musicStyleCode",
-      "genderType",
-      "sessionId"
-    ];
+    params.set(
+      "prompt",
+      String(job.prompt || "")
+    );
 
-    for (const key of fields) {
-      const value = input[key];
-
-      if (
-        value !== undefined &&
-        value !== null &&
-        value !== ""
-      ) {
-        q.set(key, String(value));
-      }
+    if (job.lyrics) {
+      params.set(
+        "lyrics",
+        String(job.lyrics)
+      );
     }
 
-    const upstream = await fetch(`${UPSTREAM}?${q.toString()}`, {
-      method: "GET",
-      headers: {
-        accept: "application/json",
-        "user-agent": "FrontTune-AI-Music/2.0"
-      }
-    });
+    if (job.title) {
+      params.set(
+        "title",
+        String(job.title)
+      );
+    }
 
-    const text = await upstream.text();
+    params.set(
+      "modelId",
+      String(
+        job.modelId || 6
+      )
+    );
+
+    params.set(
+      "isInstrumental",
+      String(
+        Boolean(job.isInstrumental)
+      )
+    );
+
+    if (job.musicStyle) {
+      params.set(
+        "musicStyle",
+        String(job.musicStyle)
+      );
+    }
+
+    if (job.musicStyleCode) {
+      params.set(
+        "musicStyleCode",
+        String(job.musicStyleCode)
+      );
+    }
+
+    params.set(
+      "genderType",
+      String(
+        job.genderType ?? 0
+      )
+    );
+
+    if (job.sessionId) {
+      params.set(
+        "sessionId",
+        String(job.sessionId)
+      );
+    }
+
+    const response =
+      await fetch(
+        `${OMEGATECH_URL}?${params.toString()}`,
+        {
+          method: "GET",
+
+          headers: {
+            "Accept":
+              "application/json",
+
+            "User-Agent":
+              "FrontTune/2.0"
+          }
+        }
+      );
+
+    const raw =
+      await response.text();
 
     let data;
 
     try {
-      data = JSON.parse(text);
+
+      data =
+        JSON.parse(raw);
+
     } catch {
+
       await store.setJSON(jobId, {
         status: "failed",
-        createdAt: Date.now(),
+
+        createdAt:
+          Date.now(),
+
         message:
-          `Music provider returned non-JSON (HTTP ${upstream.status}).`
+          `OmegaTech returned invalid JSON (HTTP ${response.status}).`
       });
 
-      return new Response("Provider returned invalid JSON", {
-        status: 502
-      });
+      return;
     }
 
-    if (!upstream.ok || data?.success === false) {
+    if (
+      !response.ok ||
+      data?.success === false
+    ) {
+
       await store.setJSON(jobId, {
         status: "failed",
-        createdAt: Date.now(),
+
+        createdAt:
+          Date.now(),
+
         message:
           data?.message ||
           data?.error ||
-          `Provider error HTTP ${upstream.status}.`,
-        providerStatus: upstream.status
+          `OmegaTech returned HTTP ${response.status}.`,
+
+        providerResponse:
+          data
       });
 
-      return new Response("Generation failed", {
-        status: 502
-      });
+      return;
     }
 
     const tracks =
@@ -103,40 +176,68 @@ export default async (request) => {
       data?.tracks ||
       [];
 
-    if (!Array.isArray(tracks) || tracks.length === 0) {
+    if (
+      !Array.isArray(tracks) ||
+      tracks.length === 0
+    ) {
+
       await store.setJSON(jobId, {
         status: "failed",
-        createdAt: Date.now(),
-        message: "Provider returned no tracks."
+
+        createdAt:
+          Date.now(),
+
+        message:
+          "OmegaTech completed but returned no music tracks.",
+
+        providerResponse:
+          data
       });
 
-      return new Response("No tracks returned", {
-        status: 502
-      });
+      return;
     }
 
-    await store.setJSON(jobId, {
-      status: "complete",
-      createdAt: Date.now(),
-      result: data
-    });
+    /*
+     * SUCCESS
+     */
 
-    return new Response("OK", { status: 200 });
+    await store.setJSON(jobId, {
+
+      status: "complete",
+
+      createdAt:
+        Date.now(),
+
+      completedAt:
+        Date.now(),
+
+      result:
+        data
+
+    });
 
   } catch (error) {
-    await store.setJSON(jobId, {
-      status: "failed",
-      createdAt: Date.now(),
-      message: error?.message || "Generation failed."
-    });
 
-    return new Response("Generation failed", {
-      status: 500
+    await store.setJSON(jobId, {
+
+      status: "failed",
+
+      createdAt:
+        Date.now(),
+
+      message:
+        error?.message ||
+        "Music generation failed."
     });
   }
-};
+}
 
-export const config = {
-  path: "/api/generate-background",
-  background: true
-};
+/*
+ * No custom path here.
+ *
+ * The -background filename itself tells
+ * Netlify this is a Background Function.
+ *
+ * Netlify's official documentation confirms
+ * that the -background convention is supported.
+ */
