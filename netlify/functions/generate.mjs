@@ -1,77 +1,117 @@
-const UPSTREAM="https://omegatech-api.dixonomega.tech/api/ai/sonu-pro";
+import { getStore } from "@netlify/blobs";
 
-function json(body,status=200){
-  return new Response(JSON.stringify(body),{
+const STORE = "fronttune-jobs";
+const UPSTREAM = "https://omegatech-api.dixonomega.tech/api/ai/sonu-pro";
+
+function json(body, status = 200) {
+  return new Response(JSON.stringify(body), {
     status,
-    headers:{
-      "content-type":"application/json; charset=utf-8",
-      "cache-control":"no-store",
-      "access-control-allow-origin":"*"
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*"
     }
   });
 }
 
 export default async (request) => {
-  if(request.method==="OPTIONS"){
-    return new Response(null,{status:204,headers:{
-      "access-control-allow-origin":"*",
-      "access-control-allow-methods":"POST,OPTIONS",
-      "access-control-allow-headers":"content-type"
-    }});
-  }
-  if(request.method!=="POST") return json({success:false,message:"Method not allowed"},405);
-
-  let input;
-  try { input=await request.json(); }
-  catch { return json({success:false,message:"Invalid JSON request body."},400); }
-
-  const prompt=String(input.prompt??"").trim();
-  if(!prompt) return json({success:false,message:"Prompt is required."},400);
-
-  const q=new URLSearchParams();
-  q.set("action","generate");
-  q.set("prompt",prompt);
-
-  const allowed=[
-    "lyrics","title","modelId","isInstrumental",
-    "musicStyle","musicStyleCode","genderType","sessionId"
-  ];
-  for(const key of allowed){
-    const value=input[key];
-    if(value!==undefined && value!==null && value!==""){
-      q.set(key,String(value));
-    }
-  }
-
-  try{
-    const upstream=await fetch(`${UPSTREAM}?${q.toString()}`,{
-      method:"GET",
-      headers:{
-        accept:"application/json",
-        "user-agent":"FrontTune-AI-Music/1.0"
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "access-control-allow-origin": "*",
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-allow-headers": "content-type"
       }
     });
+  }
 
-    const text=await upstream.text();
-    let data;
-    try{
-      data=JSON.parse(text);
-    }catch{
+  if (request.method !== "POST") {
+    return json({ success: false, message: "Method not allowed." }, 405);
+  }
+
+  let input;
+
+  try {
+    input = await request.json();
+  } catch {
+    return json({ success: false, message: "Invalid JSON request." }, 400);
+  }
+
+  const prompt = String(input.prompt ?? "").trim();
+
+  if (!prompt) {
+    return json({ success: false, message: "Prompt is required." }, 400);
+  }
+
+  const jobId = crypto.randomUUID();
+  const store = getStore(STORE);
+
+  await store.setJSON(jobId, {
+    status: "queued",
+    createdAt: Date.now()
+  });
+
+  const backgroundUrl =
+    new URL("/api/generate-background", request.url).toString();
+
+  const payload = {
+    jobId,
+    prompt,
+    lyrics: String(input.lyrics ?? ""),
+    title: String(input.title ?? ""),
+    modelId: Number(input.modelId ?? 6),
+    isInstrumental: Boolean(input.isInstrumental),
+    musicStyle: String(input.musicStyle ?? ""),
+    musicStyleCode: String(input.musicStyleCode ?? ""),
+    genderType: Number(input.genderType ?? 0),
+    sessionId: input.sessionId || undefined
+  };
+
+  try {
+    const response = await fetch(backgroundUrl, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-fronttune-job": jobId
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok && response.status !== 202) {
+      await store.setJSON(jobId, {
+        status: "failed",
+        createdAt: Date.now(),
+        message: `Could not start generation worker (HTTP ${response.status}).`
+      });
+
       return json({
-        success:false,
-        message:`Music provider returned non-JSON (HTTP ${upstream.status}).`,
-        providerStatus:upstream.status
-      },502);
+        success: false,
+        message: "Could not start the music generation worker."
+      }, 502);
     }
 
-    return json(data,upstream.status);
-  }catch(e){
     return json({
-      success:false,
-      message:"Could not reach the music provider.",
-      detail:e?.message||"Unknown upstream error"
-    },502);
+      success: true,
+      status: "queued",
+      jobId
+    });
+
+  } catch (error) {
+    await store.setJSON(jobId, {
+      status: "failed",
+      createdAt: Date.now(),
+      message: error?.message || "Could not start background generation."
+    });
+
+    return json({
+      success: false,
+      message: "Could not start music generation.",
+      detail: error?.message || "Unknown error"
+    }, 502);
   }
 };
 
-export const config={path:"/api/generate"};
+export const config = {
+  path: "/api/generate"
+};
