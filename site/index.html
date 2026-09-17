@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#09090d">
+  <meta name="description" content="FrontTune — AI music studio">
+  <title>FrontTune — AI Music Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
+
+<header class="topbar">
+  <a class="logo" href="/" aria-label="FrontTune home">
+    <span class="logo-mark">✦</span>
+    <span><strong>FRONTTUNE</strong><small>AI MUSIC STUDIO</small></span>
+  </a>
+  <div class="top-actions">
+    <div id="apiBadge" class="api-badge checking"><i></i><span>Checking studio</span></div>
+    <button id="newBtn" class="new-btn">＋ New</button>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="eyebrow">CREATE WITHOUT LIMITS</div>
+    <h1>Your idea.<br><em>Your sound.</em></h1>
+    <p>Describe a song, choose your sound, and let the studio build it.</p>
+  </section>
+
+  <section class="workspace">
+    <aside class="panel composer">
+      <div class="panel-title">
+        <div><span class="step">01</span><div><small>COMPOSE</small><h2>Describe your song</h2></div></div>
+      </div>
+
+      <label for="prompt">Song idea <b>*</b></label>
+      <textarea id="prompt" class="prompt" maxlength="1200" placeholder="A dark cinematic trap song about chasing a dream...">make a trap song</textarea>
+      <div class="counter"><span id="promptCount">16</span>/1200</div>
+
+      <div class="quick-pills">
+        <button data-prompt="A dark cinematic trap song about ambition and chasing a dream">Dark trap</button>
+        <button data-prompt="A warm melodic afrobeat love song with a huge catchy chorus">Afro love</button>
+        <button data-prompt="An emotional piano ballad about missing home">Piano ballad</button>
+      </div>
+
+      <div class="field-grid">
+        <div><label for="title">Title</label><input id="title" maxlength="120" placeholder="Optional title"></div>
+        <div><label for="style">Style</label><input id="style" maxlength="200" placeholder="Trap, R&B, Afrobeat…"></div>
+      </div>
+
+      <label for="lyrics">Lyrics <span>optional</span></label>
+      <textarea id="lyrics" class="lyrics" maxlength="6000" placeholder="Leave blank and the AI can create lyrics for you."></textarea>
+
+      <div class="field-grid">
+        <div>
+          <label for="model">Model</label>
+          <select id="model"><option value="6">v5.0</option><option value="5">v4.5-plus</option><option value="4">v4.5</option><option value="3">v4.0</option><option value="1">v3.5</option></select>
+        </div>
+        <div>
+          <label for="voice">Voice</label>
+          <select id="voice"><option value="0">Default</option><option value="1">Male</option><option value="2">Female</option></select>
+        </div>
+      </div>
+
+      <label class="switch-row"><span><strong>Instrumental</strong><small>No vocals or generated lyrics</small></span><input id="instrumental" type="checkbox"><i></i></label>
+
+      <button id="generateBtn" class="generate-btn"><span>Generate music</span><strong>↗</strong></button>
+      <button id="surpriseBtn" class="surprise-btn">✦ Surprise me</button>
+
+      <div id="errorBox" class="error-box hidden"></div>
+    </aside>
+
+    <section class="panel output">
+      <div class="output-head">
+        <div><span class="step">02</span><div><small>STUDIO OUTPUT</small><h2 id="outputTitle">Ready when you are</h2></div></div>
+        <span id="trackCount" class="track-count">0 tracks</span>
+      </div>
+
+      <div id="loading" class="loading hidden">
+        <div class="pulse"><span></span><span></span><span></span></div>
+        <h3>Building your song</h3><p>This can take a little while. Keep this page open.</p>
+      </div>
+
+      <div id="empty" class="empty-state">
+        <div class="disc">♫</div>
+        <h3>Your creations will appear here</h3>
+        <p>Generate a song to see artwork, audio and lyrics.</p>
+      </div>
+
+      <div id="tracks" class="tracks"></div>
+    </section>
+  </section>
+
+  <section class="recent-section">
+    <div class="section-head"><div><small>LIBRARY</small><h2>Recent creations</h2></div><button id="clearRecent">Clear</button></div>
+    <div id="recent" class="recent-grid"><div class="recent-empty">Nothing saved yet.</div></div>
+  </section>
+</main>
+
+<footer><span>FRONTTUNE</span><span>AI MUSIC STUDIO</span><span id="footerStatus">Secure server-side API connection</span></footer>
+
+<script src="/app.js" defer></script>
+</body>
+</html>
